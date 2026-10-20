@@ -1,0 +1,89 @@
+/* Minimal, few buttons — not maps-app-dense. spec.md > Look and Feel. */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: #f7f7f8;
+  color: #1a1a1a;
+}
+
+.app {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+h1 {
+  margin: 0 0 4px;
+  font-size: 1.6rem;
+}
+
+.tagline {
+  margin: 0 0 24px;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.add-destination form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.add-destination input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.add-destination button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.add-destination button:hover {
+  background: #333;
+}
+
+#destinations-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.destination-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.destination-name {
+  font-weight: 600;
+}
+
+.destination-status {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.empty-state {
+  color: #999;
+  font-size: 0.9rem;
+  padding: 12px 0;
+}

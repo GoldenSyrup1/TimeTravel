@@ -1,0 +1,10 @@
+[
+  {
+    "id": "30bf7076-c32f-4c28-9417-03b55e1a59f7",
+    "name": "UNSW",
+    "currentState": "home",
+    "aToB": null,
+    "bToA": null,
+    "pendingDeparted": null
+  }
+]

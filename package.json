@@ -1,0 +1,12 @@
+{
+  "name": "timetravel",
+  "version": "0.1.0",
+  "description": "Commute-estimation proof of concept: learns your real A->B and B->A travel time and tells you exactly when to leave.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
