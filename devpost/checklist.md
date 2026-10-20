@@ -9,7 +9,7 @@ Build mode: learn
 
 ## Slices
 
-- [ ] **1. Add a destination and see it in the list**
+- [x] **1. Add a destination and see it in the list**
   Becomes usable: A running app (Express server + webpage) where adding a destination by name shows it in a list, actually persisted to the JSON data file.
   Why now: Proves the whole path end to end — server, data file, frontend — on the first slice, so every later slice has somewhere to land. Project bootstrapping (package.json, server.js, data file, public/) happens here, not as its own step.
   PRD ref: `prd.md > The Core Journey` (step 1), `prd.md > Features and Behavior > Destinations`
@@ -19,7 +19,7 @@ Build mode: learn
   Learner check: Open the app in your browser, add a destination by name, and confirm it shows up in the list.
   Commit: `Add destination scaffold: Express + JSON store + list view`
 
-- [ ] **2. Log a trip — learn A→B and B→A durations**
+- [x] **2. Log a trip — learn A→B and B→A durations**
   Becomes usable: Tapping "I have departed" then "I have arrived" on a destination records a real elapsed duration; doing it again from the other direction records the other leg — both A→B and B→A update correctly based on the destination's current state.
   Why now: This is the unique kernel (`scope.md > The Unique Kernel`) — learning real durations from the user instead of trusting a maps API. It has to prove itself early, not get bolted on last.
   PRD ref: `prd.md > The Core Journey` (steps 2-4), `prd.md > Features and Behavior > Trip logging`
@@ -51,7 +51,7 @@ Build mode: learn
 
 ## Hands-on Checkpoints
 
-- [ ] Early usable behavior explored — after slice 2 (the kernel: departed/arrived producing real learned durations)
+- [x] Early usable behavior explored — after slice 2 (the kernel: departed/arrived producing real learned durations). Learner confirmed it works and asked whether timing was real vs. estimated; confirmed it's a genuine Date.now() stopwatch between taps.
 - [ ] Final kick-the-tires exploration and feedback completed
 
 ## Final Review

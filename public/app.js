@@ -1,10 +1,12 @@
-// TimeTravel frontend — destinations list, add-destination, trip logging.
-// Implements prd.md > Screens and Layout, prd.md > Features and Behavior > Destinations, Trip logging.
-// Leave-by math and notifications are added in later slices.
+// TimeTravel frontend — destinations list, add-destination, trip logging, leave-by.
+// Implements prd.md > Screens and Layout, prd.md > Features and Behavior.
+// Notifications are added in the next slice.
 
 const listEl = document.getElementById('destinations-list');
 const formEl = document.getElementById('add-destination-form');
 const nameInput = document.getElementById('destination-name');
+
+const DEFAULT_BUFFER_MINUTES = 5;
 
 async function fetchDestinations() {
   const res = await fetch('/api/destinations');
@@ -43,6 +45,10 @@ function formatDuration(seconds) {
   return mins < 1 ? '<1 min' : `${mins} min`;
 }
 
+function formatClockTime(date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function statusText(destination) {
   const aToB = formatDuration(destination.aToB);
   const bToA = formatDuration(destination.bToA);
@@ -51,6 +57,20 @@ function statusText(destination) {
   if (aToB) parts.push(`there ${aToB}`);
   if (bToA) parts.push(`back ${bToA}`);
   return parts.join(' · ');
+}
+
+// leave-by = target arrival time - learned A->B duration - buffer.
+// targetTimeStr is "HH:MM" from a <input type="time">, assumed to be today
+// (or tomorrow if that time has already passed today).
+function computeLeaveBy(targetTimeStr, aToBSeconds, bufferMinutes) {
+  const [hours, minutes] = targetTimeStr.split(':').map(Number);
+  const target = new Date();
+  target.setHours(hours, minutes, 0, 0);
+  if (target.getTime() < Date.now()) {
+    target.setDate(target.getDate() + 1);
+  }
+  const leaveBy = new Date(target.getTime() - aToBSeconds * 1000 - bufferMinutes * 60 * 1000);
+  return leaveBy;
 }
 
 function renderDestinations(destinations) {
@@ -103,6 +123,53 @@ function renderDestinations(destinations) {
 
     item.appendChild(topRow);
     item.appendChild(tripButton);
+
+    // Leave-by section: only meaningful once we have a learned A->B duration.
+    if (destination.aToB !== null) {
+      const leaveByBox = document.createElement('div');
+      leaveByBox.className = 'leave-by-box';
+
+      const timeInput = document.createElement('input');
+      timeInput.type = 'time';
+      timeInput.className = 'target-time-input';
+      timeInput.setAttribute('aria-label', `Target arrival time for ${destination.name}`);
+
+      const bufferInput = document.createElement('input');
+      bufferInput.type = 'number';
+      bufferInput.className = 'buffer-input';
+      bufferInput.min = '0';
+      bufferInput.value = String(DEFAULT_BUFFER_MINUTES);
+      bufferInput.setAttribute('aria-label', `Buffer minutes for ${destination.name}`);
+
+      const bufferLabel = document.createElement('span');
+      bufferLabel.className = 'buffer-label';
+      bufferLabel.textContent = 'min buffer';
+
+      const leaveByResult = document.createElement('div');
+      leaveByResult.className = 'leave-by-result';
+
+      function updateLeaveBy() {
+        if (!timeInput.value) {
+          leaveByResult.textContent = '';
+          return;
+        }
+        const buffer = Number(bufferInput.value) || 0;
+        const leaveBy = computeLeaveBy(timeInput.value, destination.aToB, buffer);
+        leaveByResult.textContent = `Leave by ${formatClockTime(leaveBy)}`;
+      }
+
+      timeInput.addEventListener('input', updateLeaveBy);
+      bufferInput.addEventListener('input', updateLeaveBy);
+
+      leaveByBox.appendChild(document.createTextNode('Arrive by:'));
+      leaveByBox.appendChild(timeInput);
+      leaveByBox.appendChild(bufferInput);
+      leaveByBox.appendChild(bufferLabel);
+      leaveByBox.appendChild(leaveByResult);
+
+      item.appendChild(leaveByBox);
+    }
+
     listEl.appendChild(item);
   }
 }
