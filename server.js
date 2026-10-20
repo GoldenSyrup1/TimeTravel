@@ -49,6 +49,48 @@ app.post('/api/destinations', (req, res) => {
   res.status(201).json(destination);
 });
 
+// POST /api/destinations/:id/departed — stamps a departure for whichever leg
+// matches the destination's current state (home -> A->B, destination -> B->A).
+app.post('/api/destinations/:id/departed', (req, res) => {
+  const destinations = readDestinations();
+  const destination = destinations.find((d) => d.id === req.params.id);
+  if (!destination) {
+    return res.status(404).json({ error: 'destination not found' });
+  }
+
+  destination.pendingDeparted = Date.now();
+  writeDestinations(destinations);
+  res.json(destination);
+});
+
+// POST /api/destinations/:id/arrived — computes elapsed time since the matching
+// departed call, stores it as aToB or bToA (whichever leg currentState implies),
+// flips currentState, and clears pendingDeparted.
+app.post('/api/destinations/:id/arrived', (req, res) => {
+  const destinations = readDestinations();
+  const destination = destinations.find((d) => d.id === req.params.id);
+  if (!destination) {
+    return res.status(404).json({ error: 'destination not found' });
+  }
+  if (destination.pendingDeparted === null) {
+    return res.status(400).json({ error: 'no trip in progress — tap "I have departed" first' });
+  }
+
+  const elapsedSeconds = Math.round((Date.now() - destination.pendingDeparted) / 1000);
+
+  if (destination.currentState === 'home') {
+    destination.aToB = elapsedSeconds;
+    destination.currentState = 'destination';
+  } else {
+    destination.bToA = elapsedSeconds;
+    destination.currentState = 'home';
+  }
+
+  destination.pendingDeparted = null;
+  writeDestinations(destinations);
+  res.json(destination);
+});
+
 app.listen(PORT, () => {
   console.log(`TimeTravel server listening on http://localhost:${PORT}`);
 });

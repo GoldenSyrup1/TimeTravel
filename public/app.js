@@ -1,6 +1,6 @@
-// TimeTravel frontend — destinations list + add-destination.
-// Implements prd.md > Screens and Layout (destinations list), prd.md > Features and Behavior > Destinations.
-// Trip logging, leave-by math, and notifications are added in later slices.
+// TimeTravel frontend — destinations list, add-destination, trip logging.
+// Implements prd.md > Screens and Layout, prd.md > Features and Behavior > Destinations, Trip logging.
+// Leave-by math and notifications are added in later slices.
 
 const listEl = document.getElementById('destinations-list');
 const formEl = document.getElementById('add-destination-form');
@@ -22,6 +22,37 @@ async function addDestination(name) {
   return res.json();
 }
 
+async function logDeparted(id) {
+  const res = await fetch(`/api/destinations/${id}/departed`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to log departure');
+  return res.json();
+}
+
+async function logArrived(id) {
+  const res = await fetch(`/api/destinations/${id}/arrived`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to log arrival');
+  }
+  return res.json();
+}
+
+function formatDuration(seconds) {
+  if (seconds === null || seconds === undefined) return null;
+  const mins = Math.round(seconds / 60);
+  return mins < 1 ? '<1 min' : `${mins} min`;
+}
+
+function statusText(destination) {
+  const aToB = formatDuration(destination.aToB);
+  const bToA = formatDuration(destination.bToA);
+  if (!aToB && !bToA) return 'not yet logged';
+  const parts = [];
+  if (aToB) parts.push(`there ${aToB}`);
+  if (bToA) parts.push(`back ${bToA}`);
+  return parts.join(' · ');
+}
+
 function renderDestinations(destinations) {
   listEl.innerHTML = '';
   if (destinations.length === 0) {
@@ -37,16 +68,41 @@ function renderDestinations(destinations) {
     item.className = 'destination-item';
     item.dataset.id = destination.id;
 
+    const topRow = document.createElement('div');
+    topRow.className = 'destination-top-row';
+
     const nameEl = document.createElement('span');
     nameEl.className = 'destination-name';
     nameEl.textContent = destination.name;
 
     const statusEl = document.createElement('span');
     statusEl.className = 'destination-status';
-    statusEl.textContent = 'not yet logged';
+    statusEl.textContent = statusText(destination);
 
-    item.appendChild(nameEl);
-    item.appendChild(statusEl);
+    topRow.appendChild(nameEl);
+    topRow.appendChild(statusEl);
+
+    const tripButton = document.createElement('button');
+    tripButton.className = 'trip-button';
+    const isMidTrip = destination.pendingDeparted !== null;
+    tripButton.textContent = isMidTrip ? 'I have arrived' : 'I have departed';
+    tripButton.addEventListener('click', async () => {
+      tripButton.disabled = true;
+      try {
+        if (isMidTrip) {
+          await logArrived(destination.id);
+        } else {
+          await logDeparted(destination.id);
+        }
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+        tripButton.disabled = false;
+      }
+    });
+
+    item.appendChild(topRow);
+    item.appendChild(tripButton);
     listEl.appendChild(item);
   }
 }
