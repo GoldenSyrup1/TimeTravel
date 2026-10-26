@@ -40,6 +40,9 @@ function migrate(destination) {
   if (!destination.origin) {
     destination.origin = 'Home';
   }
+  if (destination.pendingSample === undefined) {
+    destination.pendingSample = null;
+  }
   delete destination.aToB;
   delete destination.bToA;
   return destination;
@@ -94,6 +97,7 @@ app.post('/api/destinations', (req, res) => {
     aToBSamples: [],
     bToASamples: [],
     pendingDeparted: null,
+    pendingSample: null,
   };
   destinations.push(destination);
   writeDestinations(destinations);
@@ -140,10 +144,11 @@ app.post('/api/destinations/:id/departed', (req, res) => {
 });
 
 // POST /api/destinations/:id/arrived — computes elapsed time since the matching
-// departed call, appends it as a sample to aToB or bToA (whichever leg
-// currentState implies), flips currentState, and clears pendingDeparted.
-// The average only becomes the usable aToB/bToA once LOCK_IN_THRESHOLD
-// samples exist — see withComputed.
+// departed call and stages it as pendingSample (which leg, how many seconds).
+// Nothing is counted yet — currentState doesn't flip and the sample arrays
+// aren't touched until the person taps "Confirm timings" (POST .../confirm).
+// This is the rollback window: a mis-tap can be thrown away with
+// POST .../discard instead of permanently skewing the average.
 app.post('/api/destinations/:id/arrived', (req, res) => {
   const destinations = readDestinations();
   const destination = destinations.find((d) => d.id === req.params.id);
@@ -155,16 +160,61 @@ app.post('/api/destinations/:id/arrived', (req, res) => {
   }
 
   const elapsedSeconds = Math.round((Date.now() - destination.pendingDeparted) / 1000);
+  const leg = destination.currentState === 'home' ? 'aToB' : 'bToA';
 
-  if (destination.currentState === 'home') {
-    destination.aToBSamples.push(elapsedSeconds);
-    destination.currentState = 'destination';
-  } else {
-    destination.bToASamples.push(elapsedSeconds);
-    destination.currentState = 'home';
+  destination.pendingSample = { leg, seconds: elapsedSeconds };
+  destination.pendingDeparted = null;
+  writeDestinations(destinations);
+  res.json(withComputed(destination));
+});
+
+// POST /api/destinations/:id/confirm — commits the staged pendingSample into
+// the matching leg's sample array and flips currentState. This is the only
+// place a sample actually gets counted.
+app.post('/api/destinations/:id/confirm', (req, res) => {
+  const destinations = readDestinations();
+  const destination = destinations.find((d) => d.id === req.params.id);
+  if (!destination) {
+    return res.status(404).json({ error: 'destination not found' });
+  }
+  if (!destination.pendingSample) {
+    return res.status(400).json({ error: 'nothing staged to confirm' });
   }
 
-  destination.pendingDeparted = null;
+  const { leg, seconds } = destination.pendingSample;
+  if (leg === 'aToB') {
+    destination.aToBSamples.push(seconds);
+    destination.currentState = 'destination';
+  } else {
+    destination.bToASamples.push(seconds);
+    destination.currentState = 'home';
+  }
+  destination.pendingSample = null;
+
+  writeDestinations(destinations);
+  res.json(withComputed(destination));
+});
+
+// POST /api/destinations/:id/discard — rolls back whatever's currently
+// in-flight for this destination: a staged (not-yet-confirmed) sample takes
+// priority, otherwise an in-progress departure is cancelled. currentState is
+// never touched here — this only lets the person retime the SAME leg, not
+// switch direction.
+app.post('/api/destinations/:id/discard', (req, res) => {
+  const destinations = readDestinations();
+  const destination = destinations.find((d) => d.id === req.params.id);
+  if (!destination) {
+    return res.status(404).json({ error: 'destination not found' });
+  }
+
+  if (destination.pendingSample !== null) {
+    destination.pendingSample = null;
+  } else if (destination.pendingDeparted !== null) {
+    destination.pendingDeparted = null;
+  } else {
+    return res.status(400).json({ error: 'nothing to discard' });
+  }
+
   writeDestinations(destinations);
   res.json(withComputed(destination));
 });

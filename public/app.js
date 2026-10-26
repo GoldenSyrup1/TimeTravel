@@ -72,6 +72,24 @@ async function logArrived(id) {
   return res.json();
 }
 
+async function confirmTiming(id) {
+  const res = await fetch(`/api/destinations/${id}/confirm`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to confirm timing');
+  }
+  return res.json();
+}
+
+async function discardTiming(id) {
+  const res = await fetch(`/api/destinations/${id}/discard`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to discard timing');
+  }
+  return res.json();
+}
+
 function formatDuration(seconds) {
   if (seconds === null || seconds === undefined) return null;
   const mins = Math.round(seconds / 60);
@@ -115,6 +133,10 @@ function renderSetupLegBlock(destination, leg, allowDropdown) {
   const block = document.createElement('div');
   block.className = 'leg-block leg-block-active';
 
+  const isPendingConfirm = destination.pendingSample !== null;
+  const isMidTrip = destination.pendingDeparted !== null;
+  const isIdle = !isPendingConfirm && !isMidTrip;
+
   const fromRow = document.createElement('div');
   fromRow.className = 'leg-row';
   const fromLabel = document.createElement('span');
@@ -122,7 +144,7 @@ function renderSetupLegBlock(destination, leg, allowDropdown) {
   fromLabel.textContent = 'Starting from:';
   fromRow.appendChild(fromLabel);
 
-  if (allowDropdown && destination.pendingDeparted === null) {
+  if (allowDropdown && isIdle) {
     const select = document.createElement('select');
     select.className = 'leg-select';
     const optOrigin = document.createElement('option');
@@ -165,25 +187,87 @@ function renderSetupLegBlock(destination, leg, allowDropdown) {
   toRow.appendChild(toVal);
   block.appendChild(toRow);
 
-  const tripButton = document.createElement('button');
-  tripButton.className = 'trip-button';
-  const isMidTrip = destination.pendingDeparted !== null;
-  tripButton.textContent = isMidTrip ? 'I have arrived' : 'I have departed';
-  tripButton.addEventListener('click', async () => {
-    tripButton.disabled = true;
-    try {
-      if (isMidTrip) {
-        await logArrived(destination.id);
-      } else {
-        await logDeparted(destination.id);
+  if (isPendingConfirm) {
+    // Timing's been captured but not counted yet — this is the rollback
+    // window. Nothing touches the average until "Confirm timings" is tapped.
+    const pendingRow = document.createElement('div');
+    pendingRow.className = 'pending-sample-text';
+    pendingRow.textContent = `Logged: ${formatDuration(destination.pendingSample.seconds)}`;
+    block.appendChild(pendingRow);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'confirm-actions';
+
+    const confirmButton = document.createElement('button');
+    confirmButton.className = 'confirm-button';
+    confirmButton.textContent = 'Confirm timings';
+    confirmButton.addEventListener('click', async () => {
+      confirmButton.disabled = true;
+      try {
+        await confirmTiming(destination.id);
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+        confirmButton.disabled = false;
       }
-      await refresh();
-    } catch (err) {
-      alert(err.message);
-      tripButton.disabled = false;
+    });
+
+    const discardButton = document.createElement('button');
+    discardButton.className = 'discard-button';
+    discardButton.textContent = 'Discard & retry';
+    discardButton.addEventListener('click', async () => {
+      discardButton.disabled = true;
+      try {
+        await discardTiming(destination.id);
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+        discardButton.disabled = false;
+      }
+    });
+
+    actionsRow.appendChild(confirmButton);
+    actionsRow.appendChild(discardButton);
+    block.appendChild(actionsRow);
+  } else {
+    const tripButton = document.createElement('button');
+    tripButton.className = 'trip-button';
+    tripButton.textContent = isMidTrip ? 'I have arrived' : 'I have departed';
+    tripButton.addEventListener('click', async () => {
+      tripButton.disabled = true;
+      try {
+        if (isMidTrip) {
+          await logArrived(destination.id);
+        } else {
+          await logDeparted(destination.id);
+        }
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+        tripButton.disabled = false;
+      }
+    });
+    block.appendChild(tripButton);
+
+    if (isMidTrip) {
+      // Lets you back out of an accidental "I have departed" tap before
+      // timing anything.
+      const cancelLink = document.createElement('button');
+      cancelLink.className = 'cancel-link';
+      cancelLink.textContent = 'Cancel';
+      cancelLink.addEventListener('click', async () => {
+        cancelLink.disabled = true;
+        try {
+          await discardTiming(destination.id);
+          await refresh();
+        } catch (err) {
+          alert(err.message);
+          cancelLink.disabled = false;
+        }
+      });
+      block.appendChild(cancelLink);
     }
-  });
-  block.appendChild(tripButton);
+  }
 
   return block;
 }
@@ -307,10 +391,26 @@ function renderDestinations(destinations) {
     return;
   }
 
+  // Numbers only count completed destinations (both legs logged), in
+  // display order — a setup-in-progress card gets no number.
+  let completedCount = 0;
+
   for (const destination of destinations) {
     const item = document.createElement('li');
     item.className = 'destination-item';
     item.dataset.id = destination.id;
+
+    const aToBDone = destination.aToBCount > 0;
+    const bToADone = destination.bToACount > 0;
+    const isComplete = aToBDone && bToADone;
+
+    if (isComplete) {
+      completedCount += 1;
+      const badge = document.createElement('span');
+      badge.className = 'destination-badge';
+      badge.textContent = String(completedCount);
+      item.appendChild(badge);
+    }
 
     const title = document.createElement('h2');
     title.className = 'destination-title';
@@ -320,10 +420,7 @@ function renderDestinations(destinations) {
     const legs = document.createElement('div');
     legs.className = 'leg-blocks';
 
-    const aToBDone = destination.aToBCount > 0;
-    const bToADone = destination.bToACount > 0;
-
-    if (aToBDone && bToADone) {
+    if (isComplete) {
       legs.appendChild(renderPlannerLegBlock(destination, legInfo(destination, 'home')));
       legs.appendChild(renderPlannerLegBlock(destination, legInfo(destination, 'destination')));
     } else {

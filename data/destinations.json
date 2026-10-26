@@ -1,1 +1,30 @@
-[]
+[
+  {
+    "id": "b0710de9-3232-41e9-a490-135501cf628b",
+    "name": "UNSW",
+    "origin": "Home",
+    "currentState": "home",
+    "aToBSamples": [
+      5
+    ],
+    "bToASamples": [
+      1
+    ],
+    "pendingDeparted": null,
+    "pendingSample": null
+  },
+  {
+    "id": "26e3801e-c453-4bc2-a55a-281fd1280b08",
+    "name": "Burwood",
+    "origin": "Home",
+    "currentState": "destination",
+    "aToBSamples": [
+      4
+    ],
+    "bToASamples": [
+      3
+    ],
+    "pendingDeparted": null,
+    "pendingSample": null
+  }
+]
