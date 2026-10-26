@@ -1,12 +1,25 @@
 // TimeTravel frontend — destinations list, add-destination, trip logging, leave-by.
 // Implements prd.md > Screens and Layout, prd.md > Features and Behavior.
-// Notifications are added in the next slice.
+// Each destination renders as two "leg" blocks, one per direction
+// (origin->name and name->origin). Whichever leg matches currentState is the
+// active one: it gets the "Starting from" dropdown and the trip button. The
+// other leg is read-only until its turn, but still shows its own arrive-by
+// planner once it has a logged duration.
 
 const listEl = document.getElementById('destinations-list');
 const formEl = document.getElementById('add-destination-form');
+const originInput = document.getElementById('origin-name');
 const nameInput = document.getElementById('destination-name');
 
 const DEFAULT_BUFFER_MINUTES = 5;
+
+// Ask once, on first load, so the browser prompt isn't tied to any one
+// button. If denied, the on-screen "Leave by" text is still the fallback.
+function requestNotificationPermissionOnce() {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
 
 async function fetchDestinations() {
   const res = await fetch('/api/destinations');
@@ -14,13 +27,26 @@ async function fetchDestinations() {
   return res.json();
 }
 
-async function addDestination(name) {
+async function addDestination(name, origin) {
   const res = await fetch('/api/destinations', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, origin }),
   });
   if (!res.ok) throw new Error('Failed to add destination');
+  return res.json();
+}
+
+async function setStartingPoint(id, startingAt) {
+  const res = await fetch(`/api/destinations/${id}/starting-point`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startingAt }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Failed to set starting point');
+  }
   return res.json();
 }
 
@@ -49,59 +75,84 @@ function formatClockTime(date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function statusText(destination) {
-  const aToB = formatDuration(destination.aToB);
-  const bToA = formatDuration(destination.bToA);
-  if (!aToB && !bToA) return 'not yet logged';
-  const parts = [];
-  if (aToB) parts.push(`there ${aToB}`);
-  if (bToA) parts.push(`back ${bToA}`);
-  return parts.join(' · ');
-}
-
-// leave-by = target arrival time - learned A->B duration - buffer.
+// leave-by = target arrival time - learned leg duration - buffer.
 // targetTimeStr is "HH:MM" from a <input type="time">, assumed to be today
 // (or tomorrow if that time has already passed today).
-function computeLeaveBy(targetTimeStr, aToBSeconds, bufferMinutes) {
+function computeLeaveBy(targetTimeStr, legSeconds, bufferMinutes) {
   const [hours, minutes] = targetTimeStr.split(':').map(Number);
   const target = new Date();
   target.setHours(hours, minutes, 0, 0);
   if (target.getTime() < Date.now()) {
     target.setDate(target.getDate() + 1);
   }
-  const leaveBy = new Date(target.getTime() - aToBSeconds * 1000 - bufferMinutes * 60 * 1000);
-  return leaveBy;
+  return new Date(target.getTime() - legSeconds * 1000 - bufferMinutes * 60 * 1000);
 }
 
-function renderDestinations(destinations) {
-  listEl.innerHTML = '';
-  if (destinations.length === 0) {
-    const empty = document.createElement('li');
-    empty.className = 'empty-state';
-    empty.textContent = 'No destinations yet — add one above.';
-    listEl.appendChild(empty);
-    return;
+// Builds one direction's block: Starting from / Arriving at, the trip button
+// when it's this leg's turn, and the arrive-by planner once this leg has a
+// logged duration. `legState` is the currentState value this leg corresponds
+// to ('home' = origin->name, 'destination' = name->origin).
+function renderLegBlock(destination, legState) {
+  const fromIsOrigin = legState === 'home';
+  const from = fromIsOrigin ? destination.origin : destination.name;
+  const to = fromIsOrigin ? destination.name : destination.origin;
+  const avgSeconds = fromIsOrigin ? destination.aToB : destination.bToA;
+  const isActive = destination.currentState === legState;
+
+  const block = document.createElement('div');
+  block.className = 'leg-block' + (isActive ? ' leg-block-active' : '');
+
+  const fromRow = document.createElement('div');
+  fromRow.className = 'leg-row';
+  const fromLabel = document.createElement('span');
+  fromLabel.className = 'leg-label';
+  fromLabel.textContent = 'Starting from:';
+  fromRow.appendChild(fromLabel);
+
+  if (isActive && destination.pendingDeparted === null) {
+    const select = document.createElement('select');
+    select.className = 'leg-select';
+    const optOrigin = document.createElement('option');
+    optOrigin.value = 'origin';
+    optOrigin.textContent = destination.origin;
+    const optName = document.createElement('option');
+    optName.value = 'name';
+    optName.textContent = destination.name;
+    select.appendChild(optOrigin);
+    select.appendChild(optName);
+    select.value = fromIsOrigin ? 'origin' : 'name';
+    select.addEventListener('change', async () => {
+      select.disabled = true;
+      try {
+        await setStartingPoint(destination.id, select.value);
+        await refresh();
+      } catch (err) {
+        alert(err.message);
+        select.disabled = false;
+      }
+    });
+    fromRow.appendChild(select);
+  } else {
+    const val = document.createElement('span');
+    val.className = 'leg-value';
+    val.textContent = from;
+    fromRow.appendChild(val);
   }
+  block.appendChild(fromRow);
 
-  for (const destination of destinations) {
-    const item = document.createElement('li');
-    item.className = 'destination-item';
-    item.dataset.id = destination.id;
+  const toRow = document.createElement('div');
+  toRow.className = 'leg-row';
+  const toLabel = document.createElement('span');
+  toLabel.className = 'leg-label';
+  toLabel.textContent = 'Arriving at:';
+  const toVal = document.createElement('span');
+  toVal.className = 'leg-value';
+  toVal.textContent = to;
+  toRow.appendChild(toLabel);
+  toRow.appendChild(toVal);
+  block.appendChild(toRow);
 
-    const topRow = document.createElement('div');
-    topRow.className = 'destination-top-row';
-
-    const nameEl = document.createElement('span');
-    nameEl.className = 'destination-name';
-    nameEl.textContent = destination.name;
-
-    const statusEl = document.createElement('span');
-    statusEl.className = 'destination-status';
-    statusEl.textContent = statusText(destination);
-
-    topRow.appendChild(nameEl);
-    topRow.appendChild(statusEl);
-
+  if (isActive) {
     const tripButton = document.createElement('button');
     tripButton.className = 'trip-button';
     const isMidTrip = destination.pendingDeparted !== null;
@@ -120,55 +171,117 @@ function renderDestinations(destinations) {
         tripButton.disabled = false;
       }
     });
+    block.appendChild(tripButton);
+  }
 
-    item.appendChild(topRow);
-    item.appendChild(tripButton);
+  if (avgSeconds !== null) {
+    const arriveByRow = document.createElement('div');
+    arriveByRow.className = 'arrive-by-row';
 
-    // Leave-by section: only meaningful once we have a learned A->B duration.
-    if (destination.aToB !== null) {
-      const leaveByBox = document.createElement('div');
-      leaveByBox.className = 'leave-by-box';
+    const rowLabel = document.createElement('span');
+    rowLabel.className = 'arrive-by-label';
+    rowLabel.textContent = `Arrive at ${to} by:`;
 
-      const timeInput = document.createElement('input');
-      timeInput.type = 'time';
-      timeInput.className = 'target-time-input';
-      timeInput.setAttribute('aria-label', `Target arrival time for ${destination.name}`);
+    const timeInput = document.createElement('input');
+    timeInput.type = 'time';
+    timeInput.className = 'target-time-input';
+    timeInput.setAttribute('aria-label', `Target arrival time, ${from} to ${to}`);
 
-      const bufferInput = document.createElement('input');
-      bufferInput.type = 'number';
-      bufferInput.className = 'buffer-input';
-      bufferInput.min = '0';
-      bufferInput.value = String(DEFAULT_BUFFER_MINUTES);
-      bufferInput.setAttribute('aria-label', `Buffer minutes for ${destination.name}`);
+    const bufferGroup = document.createElement('span');
+    bufferGroup.className = 'buffer-group';
+    const bufferInput = document.createElement('input');
+    bufferInput.type = 'number';
+    bufferInput.className = 'buffer-input';
+    bufferInput.min = '0';
+    bufferInput.value = String(DEFAULT_BUFFER_MINUTES);
+    bufferInput.setAttribute('aria-label', `Buffer minutes, ${from} to ${to}`);
+    const bufferLabel = document.createElement('span');
+    bufferLabel.className = 'buffer-label';
+    bufferLabel.textContent = 'min buffer';
+    bufferGroup.appendChild(bufferInput);
+    bufferGroup.appendChild(bufferLabel);
 
-      const bufferLabel = document.createElement('span');
-      bufferLabel.className = 'buffer-label';
-      bufferLabel.textContent = 'min buffer';
+    arriveByRow.appendChild(rowLabel);
+    arriveByRow.appendChild(timeInput);
+    arriveByRow.appendChild(bufferGroup);
 
-      const leaveByResult = document.createElement('div');
-      leaveByResult.className = 'leave-by-result';
+    const result = document.createElement('div');
+    result.className = 'leave-by-result';
 
-      function updateLeaveBy() {
-        if (!timeInput.value) {
-          leaveByResult.textContent = '';
-          return;
-        }
-        const buffer = Number(bufferInput.value) || 0;
-        const leaveBy = computeLeaveBy(timeInput.value, destination.aToB, buffer);
-        leaveByResult.textContent = `Leave by ${formatClockTime(leaveBy)}`;
+    // One pending browser-notification timer per row. Re-typing the time or
+    // buffer replaces it rather than stacking up duplicate notifications.
+    let notifyTimer = null;
+
+    function scheduleNotification(leaveBy) {
+      if (notifyTimer) {
+        clearTimeout(notifyTimer);
+        notifyTimer = null;
       }
-
-      timeInput.addEventListener('input', updateLeaveBy);
-      bufferInput.addEventListener('input', updateLeaveBy);
-
-      leaveByBox.appendChild(document.createTextNode('Arrive by:'));
-      leaveByBox.appendChild(timeInput);
-      leaveByBox.appendChild(bufferInput);
-      leaveByBox.appendChild(bufferLabel);
-      leaveByBox.appendChild(leaveByResult);
-
-      item.appendChild(leaveByBox);
+      const msUntil = leaveBy.getTime() - Date.now();
+      if (msUntil <= 0) return;
+      notifyTimer = setTimeout(() => {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          new Notification(`Time to leave for ${to}`, {
+            body: `Leave ${from} now to arrive by ${timeInput.value}.`,
+          });
+        }
+      }, msUntil);
     }
+
+    function update() {
+      if (!timeInput.value) {
+        result.textContent = '';
+        if (notifyTimer) {
+          clearTimeout(notifyTimer);
+          notifyTimer = null;
+        }
+        return;
+      }
+      const buffer = Number(bufferInput.value) || 0;
+      const leaveBy = computeLeaveBy(timeInput.value, avgSeconds, buffer);
+      result.textContent = `Leave by ${formatClockTime(leaveBy)}`;
+      scheduleNotification(leaveBy);
+    }
+    timeInput.addEventListener('input', update);
+    bufferInput.addEventListener('input', update);
+
+    block.appendChild(arriveByRow);
+    block.appendChild(result);
+  } else if (!isActive) {
+    const pending = document.createElement('div');
+    pending.className = 'leg-pending';
+    pending.textContent = 'Not yet logged';
+    block.appendChild(pending);
+  }
+
+  return block;
+}
+
+function renderDestinations(destinations) {
+  listEl.innerHTML = '';
+  if (destinations.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'empty-state';
+    empty.textContent = 'No destinations yet — add one above.';
+    listEl.appendChild(empty);
+    return;
+  }
+
+  for (const destination of destinations) {
+    const item = document.createElement('li');
+    item.className = 'destination-item';
+    item.dataset.id = destination.id;
+
+    const title = document.createElement('h2');
+    title.className = 'destination-title';
+    title.textContent = `${destination.origin} — ${destination.name}`;
+    item.appendChild(title);
+
+    const legs = document.createElement('div');
+    legs.className = 'leg-blocks';
+    legs.appendChild(renderLegBlock(destination, 'home'));
+    legs.appendChild(renderLegBlock(destination, 'destination'));
+    item.appendChild(legs);
 
     listEl.appendChild(item);
   }
@@ -182,10 +295,13 @@ async function refresh() {
 formEl.addEventListener('submit', async (event) => {
   event.preventDefault();
   const name = nameInput.value.trim();
+  const origin = originInput.value.trim() || 'Home';
   if (!name) return;
-  await addDestination(name);
+  await addDestination(name, origin);
+  originInput.value = '';
   nameInput.value = '';
   await refresh();
 });
 
+requestNotificationPermissionOnce();
 refresh().catch((err) => console.error(err));

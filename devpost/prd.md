@@ -16,7 +16,7 @@ A commute-estimation webapp for someone with a long, variable commute: log a tri
 5. For a future trip, the user enters a target arrival time at the destination (per trip, not a standing rule).
 6. The app computes leave-by = target arrival time − learned A→B duration − buffer, and shows it immediately.
 7. At the leave-by time, a browser notification fires telling the user to leave now.
-8. Every subsequent "departed"/"arrived" pair for that leg updates (refines) the learned duration, so later estimates get more accurate.
+8. Once both legs of a destination are known, the departed/arrived buttons disappear for that destination — there's nothing left to prove by tapping again, and leaving them up risks an accidental tap corrupting an already-usable duration.
 
 Success looks like: a destination set up, one trip logged, a second trip's leave-by time computed and notified correctly — with the user able to see that the number came from their own logged trip, not a generic estimate.
 
@@ -40,7 +40,8 @@ Minimal, few buttons — explicitly not maps-app-dense. Closer to a simple to-do
 
 ### Trip logging ("departed" / "arrived")
 - "I have departed" starts a timestamp for the current leg (A→B if coming from home, B→A if coming from the destination — direction is just whichever leg the user is logging, not a system-enforced state).
-- "I have arrived" stops it and stores the elapsed duration as that leg's current learned time, overwriting the previous value for the PoC (per `scope.md > Later`, averaging/outlier handling is deferred).
+- "I have arrived" stops it and stores the elapsed duration as that leg's learned time.
+- The buttons only appear while at least one leg (A→B or B→A) is still unknown. Once both are known, they're hidden for that destination — avoids an accidental tap silently corrupting an already-usable duration, and matches the PoC's one-shot-per-leg design (per `scope.md > Later`, re-measuring/averaging across multiple trips is deferred).
 - As a commuting student, I want to log a trip in two taps so that I don't have to do any manual timing or math myself.
   - [ ] Tapping "departed" then "arrived" results in a stored duration for the correct leg (A→B or B→A) with no extra input required.
   - [ ] The destinations list immediately reflects the newly learned duration.
@@ -51,6 +52,11 @@ Minimal, few buttons — explicitly not maps-app-dense. Closer to a simple to-do
 - As a commuting student, I want to enter when I need to arrive and get a precise leave-by time, so that I don't have to check Maps and estimate buffer time myself.
   - [ ] Entering a target arrival time with a logged A→B duration produces a leave-by time equal to target − duration − buffer.
   - [ ] Changing the buffer updates the leave-by time immediately without re-logging a trip.
+
+### Arrival estimation (departure → arrival)
+- The reverse of leave-by: user enters a departure time instead, and sees the resulting door-to-door arrival time, computed as departure + learned A→B duration.
+- As a commuting student, I want to enter when I'm actually leaving and see when I'll arrive, so that I can tell someone an ETA without doing the math myself.
+  - [ ] Entering a departure time with a logged A→B duration produces an arrival time equal to departure + duration.
 
 ### Notification
 - A browser notification fires at the computed leave-by time telling the user to leave.

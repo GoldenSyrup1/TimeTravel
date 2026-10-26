@@ -29,7 +29,7 @@ Build mode: learn
   Learner check: Log one trip out and one trip back for a destination and confirm the "going" time and the "return" time show up correctly and separately.
   Commit: `Implement departed/arrived trip logging with state-based A->B/B->A inference`
 
-- [ ] **3. Target arrival time → leave-by computation**
+- [x] **3. Target arrival time → leave-by computation**
   Becomes usable: Enter a target arrival time for a destination and see the computed leave-by time (learned A→B duration + adjustable buffer) immediately.
   Why now: This is the PRD's "oh, that's cool" payoff beat — but it only means something once slice 2 has produced a real learned duration to compute from.
   PRD ref: `prd.md > The Core Journey` (steps 5-6), `prd.md > Features and Behavior > Leave-by estimation`, `prd.md > Features and Behavior > Buffer`
@@ -39,7 +39,7 @@ Build mode: learn
   Learner check: Pick a destination you've logged a trip for, enter when you need to arrive, and check the leave-by time matches what you'd expect by hand.
   Commit: `Add target-arrival input and client-side leave-by computation`
 
-- [ ] **4. Notification fires at leave-by time**
+- [x] **4. Notification fires at leave-by time**
   Becomes usable: The full core journey is complete — a browser notification fires at the computed leave-by time, with an on-screen fallback if permission is denied.
   Why now: Depends on slice 3's leave-by value existing; closes the loop described in `prd.md`'s Core Journey step 7.
   PRD ref: `prd.md > The Core Journey` (steps 6-7), `prd.md > Features and Behavior > Notification`, `prd.md > States and Boundaries` (notification permission not granted)
@@ -71,3 +71,6 @@ Reflection: [not yet started]
 Activity mode: [not yet started]
 
 ## Revisions
+
+- Trip logging buttons now hide once both A→B and B→A are known for a destination (previously always visible, re-loggable indefinitely) — the build discovered an accidental re-tap would silently corrupt an already-usable duration with no guard, so hiding the buttons once there's nothing left to prove is a simpler fix than building outlier detection. `prd.md > Features and Behavior > Trip logging` and `prd.md > The Core Journey` (step 8) updated to match.
+- Superseded the above: each destination's two legs (A→B, B→A) each independently accumulate samples and average them, rather than one trip simply overwriting the previous value — so an additional trip refines the number instead of risking corrupting it, and the earlier "hide both buttons once both legs known" guard was dropped since it's no longer needed. The UI was also restructured around two explicit per-leg blocks ("Starting from" / "Arriving at", each with its own trip button and its own arrive-by+buffer row) instead of one combined status line plus a separate reverse "depart at" lookup. A destination also now carries an explicit `origin` label (not a hardcoded "Home"), and a "Starting from" dropdown lets the active leg's direction be set directly — for the case where the first trip logged isn't from the assumed home side. `prd.md` and `spec.md` describe the earlier single-value, overwrite-on-log model and are now out of date against the actual build; flagged here rather than rewritten given the time left before submission.
