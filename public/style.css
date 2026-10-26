@@ -137,6 +137,12 @@ h1 {
   font-style: italic;
 }
 
+.leg-duration {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
 .trip-button {
   align-self: flex-start;
   margin-top: 2px;
